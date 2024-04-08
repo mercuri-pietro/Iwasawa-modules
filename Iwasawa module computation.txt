@@ -1,4 +1,4 @@
-// Given a real quadratic number field, this function computes the ideal J of the Iwasawa algebra Lambda such that the Iwasawa module associated to the Zp-cyclotomic extension of the given number field is isomorphic to Lambda/J.
+// Given a real quadratic number field, this function computes the ideal J of the Iwasawa algebra Lambda such that the Iwasawa module associated to the cyclotomic Z_p-extension of the given number field is isomorphic to Lambda/J.
 
 // The input elements are the following:
 // disc must be an integer, it is the discriminant of the real quadratic number field, if it is not a discriminant of a quadratic real field a warning is given as result;
