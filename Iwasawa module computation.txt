@@ -1,0 +1,613 @@
+// Given a real quadratic number field, this function computes the ideal J of the Iwasawa algebra Lambda such that the Iwasawa module associated to the Zp-cyclotomic extension of the given number field is isomorphic to Lambda/J.
+
+// The input elements are the following:
+// disc must be an integer, it is the discriminant of the real quadratic number field, if it is not a discriminant of a quadratic real field a warning is given as result;
+// pp must be an odd prime number.
+
+// The options are the following:
+// tol must be a positive integer and it is the number of primes rr tested consecutively inside the "prime test cycle" before to accept that we found all the generators of the ideal;
+// hptest is a boolean that allows the high precision test with polynomials, i.e., the lower bound for the ideal J; in some case the lower bound is immediate and no high precision test is needed, in these cases this option does not matter, in the other cases the high precision test is necessary to have a proof that the resulting ideal J is the correct ideal (and it is not bigger than the actual ideal), the high precision test could take high amounts of time and memory;
+// maxapprox must be a positive integer greater than 2, this option does not matter if hptest is false, maxapprox is the maximum exponent of 10^(-1) for which try to compute the high precision test (i.e., the lower bound for the ideal J), more precisely 10^(-maxapprox) is the precision required to find numerically the integer coefficients of the polynomials during the high precision test.
+
+// The output is a list with 5 elements:
+// 1) the discriminant of the real quadratic number field;
+// 2) the discriminant modulo p;
+// 3) the level where the tower stabilizes;
+// 4) an ideal basis of J in the generator T;
+// 5) whether the lower bound has been successfully computed or not, if not, the reason is specified: "High precision test not applied" means that hptest is set on false, "Numerical approximation is not enough" means that maxapprox is too low to detect correctly the integer coefficients of the polynomials in the high precision test.
+
+
+
+IwaMod:=function(disc, pp : tol:=5, hptest:=true, maxapprox:=5)
+
+  // setup
+  ZZ:=IntegerRing();
+  Umodp, iUmodp:=UnitGroup(GF(pp));
+
+  // generator of units of Z/pZ
+  pUgen:=iUmodp(Umodp.1);
+
+  // setup discriminant
+  ff:=disc;
+  fmodp:=ff mod pp;
+  chiff:=LegendreSymbol(ff,pp);
+  disctemp:=<ff,-1>;
+  if (ff gt 1) and ((ff mod 4) eq (0 mod 4)) and ( ( (ZZ!(ff/4) mod 4) eq (2 mod 4) or (ZZ!(ff/4) mod 4) eq (3 mod 4) ) and IsSquarefree(ZZ!(ff/4)) ) then
+    if ( chiff ne 1 ) then
+      cn:=ClassNumber(ff);
+      vv:=Valuation(cn,pp);
+      if (cn mod pp) eq (0 mod pp) then
+        disctemp:=<ff,vv>;
+      else
+        ZZpkk:=ResidueClassRing(pp^(vv+1));
+        RRT<T>:=PolynomialRing(ZZpkk,1);
+        GBIIT:=Basis(ideal<RRT|[1]>);
+        return [*ff,fmodp,0,GBIIT,true*];
+      end if;
+    end if;
+  elif (ff gt 1) and ((ff mod 4) eq (1 mod 4)) and IsSquarefree(ff) then
+    if ( chiff ne 1 ) then
+      cn:=ClassNumber(ff);
+      vv:=Valuation(cn,pp);
+      if (cn mod pp) eq (0 mod pp) then
+        disctemp:=<ff,vv>;
+      else
+        ZZpkk:=ResidueClassRing(pp^(vv+1));
+        RRT<T>:=PolynomialRing(ZZpkk,1);
+        GBIIT:=Basis(ideal<RRT|[1]>);
+        return [*ff,fmodp,0,GBIIT,true*];
+      end if;
+    end if;
+  else
+    return "It is not a discriminant of a quadratic real field";
+  end if; 
+  disc:=disctemp;
+
+  // setup non-square modulo p
+  if ( fmodp eq (0 mod pp) ) then
+    ffc:=ZZ!(ff/pp);
+    if ( (pp mod 4) eq (1 mod 4) ) then
+      ffk:=ffc;
+      for bb:=2 to ffc-1 do
+        if (KroneckerSymbol(ffc,bb) eq -1) then
+          nsq:=ZZ!(bb);
+          break;
+        end if;
+      end for;
+    elif ( (pp mod 4) eq (3 mod 4) ) then
+      ffk:=-ffc;
+      nsq:=-1;
+    end if;
+  else
+    ffc:=ff;
+    ffk:=ff; 
+  end if;
+  
+  // upper bound
+
+  // raising level
+  nn:=0;
+  if ( chiff eq 1 ) then
+    kendlev:=2;
+  else
+    kendlev:=disc[2]+1;
+  end if;
+  testlevel:=false;
+  testexit:=false;
+  while not(testlevel) do
+    nn:=nn+1;
+    ZZpnn:=ResidueClassRing(pp^(nn+1));
+    pUgenIm:=(ZZpnn!ZZ!pUgen)^(pp^nn);
+    polcheck:=false;
+    if nn eq 1 then
+  		polcheckresult:=false;
+    end if;
+    kk:=kendlev;
+    toltemp:=tol;
+    enoughapprox:=true;
+    while not(polcheck) do
+      if enoughapprox then
+
+        // check k-precision
+        testkprec:=false;
+        kcount:=1;
+        while not(testkprec) do
+          ZZpkk:=ResidueClassRing(pp^kk);
+          RRT<T>:=PolynomialRing(ZZpkk,1);
+					if (chiff eq 1) then
+            omegan:=((T+1)^(pp^nn)-1) div T;
+					else
+            omegan:=(T+1)^(pp^nn)-1;
+					end if;
+          II:=Ideal(omegan);
+          bb:=Basis(II);
+          if (nn eq 1) then
+					  if (chiff eq 1) then
+						  ITest:=RRT;
+						else
+              ITest:=ideal<RRT | pp^(disc[2]), T>;
+						end if;
+          end if;
+          if ( kcount eq 1 ) then
+            IIktest:=RRT;
+          else
+            GBktest:=GroebnerBasis(IIktest);
+            bbktest:=[];
+            for ee in GBktest do
+              bbktest:=Append(bbktest,RRT!ee);
+            end for;
+            IIktest:=Ideal(bbktest);
+          end if;
+
+          // prime test cycle
+          primerr:=[];
+          teststab:=0;
+          rr:=0;
+          ii:=0;
+          mm:=Lcm([ffc,pp^kk]);
+          while (teststab lt toltemp) do
+            rr:=1+ii*mm;
+            if IsPrime(rr) then
+              primerr:=Append(primerr,rr);
+              FFr:=GF(rr);
+              ee:=ZZ!((rr-1)/(pp^kk));
+              zz:=RootOfUnity(pp^(nn+1), FFr)^(-1);
+              zf:=RootOfUnity(ffc, FFr);
+              zk:=RootOfUnity(pp^kk, FFr);
+							if (zz in FFr) and (zf in FFr) and (zk in FFr) then
+								UU, iU:=UnitGroup(FFr);
+								zk:=zk @@ iU;
+								SS<zk>, iS:=sub<UU | zk>;
+								GG:=GenericAbelianGroup(SS);
+								zk:=GG!zk;
+								fr:=0;
+								zxl:=[];
+								KS:=[];
+								zx:=1;
+
+								for xx:=1 to ffc-1 do
+									zx:=zx*zf;
+									if ( Gcd(xx,ffc) eq 1 ) then
+										zxl:=Append(zxl,zx);
+										KS:=Append(KS,KroneckerSymbol(ffk,xx));
+									end if;
+								end for;
+
+								for yy:=0 to pp^nn-1 do
+									zy:=zz;
+									zln:=1;
+									zld:=1;
+									for ss:=1 to pp-1 do
+										if ( fmodp eq (0 mod pp) ) then
+											for xx:=1 to #zxl do
+												zxl[xx]:=zxl[xx]^nsq;
+											end for;
+										end if;
+										zy:=zy^(ZZ!pUgenIm);
+										for xx:=1 to #zxl do
+											if ( KS[xx] eq 1 ) then
+												zln:=zln*(zy-zxl[xx]);
+											else
+												zld:=zld*(zy-zxl[xx]);
+											end if;
+										end for;
+									end for;
+
+									zl:=zln/zld;
+									zl:=zl @@ iU;
+									zl:=ee*zl;
+									zll:=GG!zl;
+									fr:=fr+Log(zk,zll)*(T+1)^yy;
+									zz:=zz^(pp+1);
+								end for;
+								if (chiff eq 1) then
+									fr:=fr div T;
+								end if;
+								bb:=Append(bb,fr);
+
+								// check whether it seems to have enough generators
+								JJ:=Ideal(bb);
+								if (nn eq 1) and (JJ eq ITest) then
+									II:=JJ;
+									testkprec:=true;
+									teststab:=toltemp;
+									testexit:=true;
+                  polcheckresult:=true;
+								else
+									stab:=II eq JJ;
+									if stab then
+										teststab:=teststab+1;
+									else
+										teststab:=0;
+									end if;
+									II:=JJ;
+								end if;
+							end if;
+            end if;
+            ii:=ii+1;
+          end while;
+
+          // check whether there is enough p-adic approximation
+          if ( II eq IIktest ) then
+            testkprec:=true;
+          else
+            IIktest:=II;
+            kk:=kk+1;
+            kcount:=kcount+1;
+          end if;
+        end while;
+
+        // check whether the ideal stabilizes at level nn
+        GBIIT:=GroebnerBasis(II);
+        GBTest:=GroebnerBasis(ITest);
+        SS:={};
+        STest:={};
+        RRY<Y>:=PolynomialRing(ResidueClassRing(pp^kk),1);
+        for ii:=1 to #GBIIT do
+          GBIITRes:=RRY!(GBIIT[ii]);
+          SS:=SS join {GBIITRes}; 
+        end for;
+        for ii:=1 to #GBTest do
+          GBTestRes:=RRY!(GBTest[ii]);
+          STest:=STest join {GBTestRes};
+        end for;
+        stablevel:=SS eq STest;
+        if stablevel then
+          break;
+        end if;
+        if (GBIIT ne [1]) and (hptest) then
+
+          // lower bound
+
+          // change of generator: X=1+T
+          RRX<X>:=PolynomialRing(ZZpkk,1);
+          phiX:=hom<RRT->RRX|X-1>;
+          GBIIX:=[];
+          for ii in GBIIT do
+            GBIIX:=Append(GBIIX,phiX(ii));
+          end for;
+          IIX:=Ideal(GBIIX);
+          GBIIX:=GroebnerBasis(IIX);
+
+          // annihilator I-hat
+          if ( nn gt 1 ) then
+            nnn:=nn-1;
+          else
+            nnn:=nn;
+          end if;
+          ZZpnnn:=ResidueClassRing(pp^nnn);
+          pUgenIm:=(ZZpnnn!ZZ!pUgen)^(pp^nnn);
+          kkk:=Valuation(ZZ!GBIIX[#GBIIX],pp);
+          ZZpkkk:=ResidueClassRing(pp^kkk);
+          RRU<X>:=PolynomialRing(ZZpkkk);
+					if (chiff eq 1) then
+            omegan:=(X^(pp^nnn)-1) div (X-1);
+					else
+            omegan:=X^(pp^nnn)-1;
+					end if;
+          Iw<x>,pi:=quo<RRU | omegan>;
+          hat:=hom<Iw -> Iw | x^(-1) >;
+          IIU:=[];
+          for ii:=1 to (#GBIIX-1) do
+            IIU:=Append(IIU,hat(pi(GBIIX[ii])));
+          end for;
+          RRM<X>:=PolynomialRing(ZZpkkk,1);
+          phi:=hom<RRU -> RRM | X>;
+          IIM:=[];
+          for ii:=1 to #IIU do
+            IIM:=Append(IIM,phi(IIU[ii] @@ pi));
+          end for;
+					if (chiff eq 1) then
+            omegan:=(X^(pp^nnn)-1) div (X-1);
+					else
+            omegan:=X^(pp^nnn)-1;
+					end if;
+          MM:=EModule(RRM, 1);
+          omegan:=MM![omegan];
+          Iw:=quo<MM | omegan>;
+          IIhat:=[];
+          for ii:=1 to #IIM do
+            IIhat:=Append(IIhat,Iw![IIM[ii]]);
+          end for;
+          IIhat:=sub<Iw | IIhat>;
+          AA:=Annihilator(IIhat);
+          AAb:=Basis(AA);
+          AAba:=[];
+          for ss:=1 to #AAb do
+            eltemp:=(Iw![AAb[ss]])[1];
+            if eltemp ne 0 then
+              AAba:=Append(AAba,eltemp);
+            end if;
+          end for;
+
+          // precision integer recognition
+          precint:=10^2;
+
+          // minimal polynomials cycle
+          approximationtest:=0;
+          apprexp:=2;
+          while approximationtest eq 0 do
+
+            // precision complex field
+            apprexp:=apprexp+1;
+						if (apprexp gt maxapprox) then 
+              enoughapprox:=false;
+              break; 
+            end if;
+            preccom:=10^apprexp;
+            CC:=ComplexField(preccom);
+            RF:=RealField(preccom);
+
+            // eta conjugates
+            eta:=[];
+            Czz:=Exp(2*Pi(CC)*CC.1/(pp^(nnn+1)));
+            Czf:=Exp(2*Pi(CC)*CC.1/ffc);
+            Czxl:=[];
+            KS:=[];
+            Czx:=1;
+            for xx:=1 to ffc-1 do
+              Czx:=Czx*Czf;
+              if ( Gcd(xx,ffc) eq 1 ) then
+                Czxl:=Append(Czxl,Czx);
+                KS:=Append(KS,KroneckerSymbol(ffk,xx));
+              end if;
+            end for;
+            for uu:=1 to pp^nnn do
+              Czl:=1;
+              eg:=1;
+              if pp eq 3 then
+                ssub:=1;
+              else
+                ssub:=pp-1;
+              end if;
+              for ss:=1 to ssub do
+                Czy:=Czz^(ZZ!eg);
+                if ( fmodp eq (0 mod pp) ) then
+                  if (ss ne 1) then
+                    for xx:=1 to #Czxl do
+                      Czxl[xx]:=Czxl[xx]^nsq;
+                    end for;
+                  end if;
+                end if;
+                Czln:=1;
+                Czld:=1;
+                for xx:=1 to #Czxl do
+                  if ( KS[xx] eq 1 ) then
+                    Czln:=Czln*(1-Czy*Czxl[xx]);
+                  else
+                    Czld:=Czld*(1-Czy*Czxl[xx]);
+                  end if;
+                end for;
+                Czl:=Czl*Czln/Czld;
+                eg:=eg*pUgenIm;
+              end for;
+              eta:=Append(eta,Czl);
+              eta:=Append(eta,Czl^(-1));
+              if uu ne pp^nnn then
+                Czz:=Czz^(1+pp);
+              end if;
+            end for;
+
+            // eta minimal polynomial
+            RRint<Y>:=PolynomialRing(ZZ);
+            RRcom<y>:=PolynomialRing(CC);
+            minpoleta:=RRcom!1;
+            erreta:=10^(-preccom);
+            for ee in eta do
+              minpoleta:=minpoleta*(y-ee);
+            end for;
+            coefeta:=Coefficients(minpoleta);
+            polcycle:=0;
+            while polcycle eq 0 do
+              for cc in coefeta do
+                err:=Abs(RF!(Round(cc))-cc);
+                if err gt erreta then
+                  erreta:=err;
+                end if;
+                if err gt 10^(-precint) then
+                  polcycle:=1;
+                  break;
+                end if;
+              end for;
+              if polcycle eq 1 then
+                break;
+              end if;
+              minpoletaZ:=0;
+              for ii:=1 to #coefeta do
+                minpoletaZ:=minpoletaZ+ZZ!(Round(coefeta[ii]))*Y^(ii-1);
+              end for;
+        
+              // exact root to check
+              AAgal:=AAba;
+              exprts:=[];
+              for ss:=1 to #AAgal do
+                exprts:=Append(exprts,kkk);
+              end for;
+              for ss:=1 to #AAgal do
+                for jj:=1 to kkk-1 do
+                  divtest,poldiv:=IsDivisibleBy(AAgal[ss],pp^jj);
+                  if ( divtest ) then
+                    exprts[ss]:=exprts[ss]-1;
+                    AAgal[ss]:=poldiv;
+                  else
+                    break;
+                  end if;
+                end for;
+              end for;
+
+              // epsilon conjugates
+              alleps:=[];
+              for ss:=1 to #AAgal do
+                alleps:=Append(alleps,[]);
+              end for;
+              for ss:=1 to #AAgal do
+                 for ww:=1 to #eta do
+                    alleps[ss]:=Append(alleps[ss],CC!1);
+                 end for;
+              end for;
+              for ss:=1 to #AAgal do
+                coef:=Coefficients(AAgal[ss],X);
+                coefZ:=[];
+                for ii:=1 to #coef do
+                  if ( ZZ!(coef[ii]) gt ZZ!((pp^exprts[ss]-1)/2) ) then
+                    coefZ[ii]:=(ZZ!coef[ii])-pp^exprts[ss];
+                  else
+                    coefZ[ii]:=(ZZ!coef[ii]);
+                  end if;
+                end for;
+                for ww:=1 to #eta do
+                  for aa:=0 to Degree(AAgal[ss]) do
+                    ii:=ZZ!((ww+2*aa) mod #eta);
+                    if ii eq 0 then
+                      ii:=#eta;
+                    end if;
+                    alleps[ss][ww]:=alleps[ss][ww]*eta[ii]^(ZZ!coefZ[aa+1]);
+                  end for;
+                end for;
+              end for;
+
+              // epsilon minimal polynomial
+              minpoleps:=[];
+              erreps:=[];
+              for ss:=1 to #alleps do
+                minpoleps:=Append(minpoleps,RRcom!1);
+                erreps:=Append(erreps,RF!10^(-preccom));
+              end for;
+              for ss:=1 to #alleps do
+                for ee in alleps[ss] do
+                  minpoleps[ss]:=minpoleps[ss]*(y-ee);
+                end for;
+                coefeps:=Coefficients(minpoleps[ss]);
+                for cc in coefeps do
+                  err:=Abs(RF!(Round(cc))-cc);
+                  if err gt erreps[ss] then
+                    erreps[ss]:=err;
+                  end if;
+                  if err gt 10^(-precint) then
+                    polcycle:=1;
+                    break ss;
+                  end if;
+                end for;
+              end for;
+              if polcycle eq 1 then
+                break;
+              end if;
+              minpolepsZ:=[];
+              for ss:=1 to #alleps do
+                minpolepsZ:=Append(minpolepsZ,RRint!0);
+              end for;
+              for ss:=1 to #alleps do
+                for ii:=1 to #coefeps do
+                  coefeps:=Coefficients(minpoleps[ss]);
+                  minpolepsZ[ss]:=minpolepsZ[ss]+ZZ!(Round(coefeps[ii]))*Y^(ii-1);
+                end for;
+              end for;
+
+              // p^k-th roots of epsilon minimal polynomial
+              allrteps:=[];
+              for ss:=1 to #alleps do
+                allrteps:=Append(allrteps,[]);
+              end for;
+              for ss:=1 to #alleps do
+                for ww:=1 to #alleps[ss] do
+                  allrteps[ss]:=Append(allrteps[ss],Root(Real(alleps[ss][ww]),pp^exprts[ss]));
+                end for;
+              end for;
+              minpolrts:=[];
+              errrts:=[];
+              for ss:=1 to #allrteps do
+                minpolrts:=Append(minpolrts,RRcom!1);
+                errrts:=Append(errrts,RF!10^(-preccom));
+              end for;
+              for ss:=1 to #allrteps do
+                for ee in allrteps[ss] do
+                  minpolrts[ss]:=minpolrts[ss]*(y-ee);
+                end for;
+                coefrteps:=Coefficients(minpolrts[ss]);
+                for cc in coefrteps do
+                  err:=Abs(RF!(Round(cc))-cc);
+                  if err gt errrts[ss] then
+                    errrts[ss]:=err;
+                  end if;
+                  if err gt 10^(-precint) then
+                    polcycle:=1;
+                    break ss;
+                  end if;
+                end for;
+              end for;
+              if polcycle eq 1 then
+                break;
+              end if;
+              minpolrtsZ:=[];
+              for ss:=1 to #allrteps do
+                minpolrtsZ:=Append(minpolrtsZ,RRint!0);
+              end for;
+              for ss:=1 to #allrteps do
+                for ii:=1 to #coefrteps do
+                  coefrteps:=Coefficients(minpolrts[ss]);
+                  minpolrtsZ[ss]:=minpolrtsZ[ss]+ZZ!(Round(coefrteps[ii]))*Y^(ii-1);
+                end for;
+              end for;
+
+              // maximal error
+              minerr:=[Round(Log(10,erreta))];
+              for ee:=1 to #erreps do
+                minerr:=Append(minerr,Round(Log(10,erreps[ee])));
+              end for;
+              for ee:=1 to #errrts do
+                minerr:=Append(minerr,Round(Log(10,errrts[ee])));
+              end for;
+
+              // check polynomial divisibility
+              for ss:=1 to #allrteps do
+                pow:=hom<RRint -> RRint | Y^(pp^exprts[ss])>;
+                polcheck:=IsDivisibleBy(pow(minpolepsZ[ss]),minpolrtsZ[ss]);
+								polcheckresult:=polcheck;
+              end for;
+              polcycle:=1;
+              approximationtest:=1;
+            end while;
+          end while;
+          if not(polcheck) then
+            kk:=kk-1;
+            toltemp:=toltemp+5;
+          end if;
+				elif not(hptest) then
+					polcheck:=true;
+          polcheckresult:=<false,"High precision test not applied">;
+        else
+          polcheck:=true;
+        end if;
+
+      else
+        polcheck:=true;
+        polcheckresult:=<false,"Numerical approximation is not enough">;
+        break;
+      end if;
+    end while;
+    kendlev:=kk;
+
+    // output
+    if not(testexit) then
+      if stablevel then
+        testlevel:=true;
+        return [*ff,fmodp,nn-1,GBIIT,polcheckresult*];
+      else
+        ITest:=II;
+      end if;
+    elif (GBIIT ne [1]) then
+      testlevel:=true;
+      return [*ff,fmodp,nn-1,GBIIT,polcheckresult*];
+    else
+      testlevel:=true;
+      return [*ff,fmodp,nn-1,GBIIT,polcheckresult*];
+    end if;
+  end while;
+end function;
+
+
+
+
+
+
+
